@@ -1,0 +1,145 @@
+/* AdminDashboard.css */
+
+.container {
+    padding: 24px;
+}
+
+h2 {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 24px;
+}
+
+.error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+}
+
+.input-container {
+    margin-bottom: 24px;
+}
+
+input[type="text"] {
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    margin-right: 8px;
+}
+
+button {
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+button:disabled {
+    background-color: #ccc;
+}
+
+button.bg-blue {
+    background-color: #007bff;
+    color: white;
+}
+
+button.bg-blue:hover {
+    background-color: #0056b3;
+}
+
+button.bg-red {
+    background-color: #dc3545;
+    color: white;
+}
+
+button.bg-red:hover {
+    background-color: #c82333;
+}
+
+button.bg-yellow {
+    background-color: #ffc107;
+    color: white;
+}
+
+button.bg-yellow:hover {
+    background-color: #e0a800;
+}
+
+.folder-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+}
+
+.folder {
+    border: 1px solid #ccc;
+    padding: 16px;
+    border-radius: 8px;
+}
+
+.folder-name {
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 16px;
+}
+
+.folder-actions {
+    margin-bottom: 16px;
+}
+
+input[type="file"] {
+    margin-bottom: 12px;
+}
+
+.image-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.image-item {
+    position: relative;
+}
+
+img {
+    width: 200px;
+    height: 200px; /* Reduced height */
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.image-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 4px;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-bottom-left-radius: 4px;
+}
+
+.image-actions button {
+    font-size: 12px;
+    padding: 4px 8px;
+    margin-right: 8px;
+}
+
+.edit-input {
+    width: 80px;
+    padding: 4px;
+    font-size: 12px;
+    margin-right: 8px;
+}
+
+.save-button {
+    font-size: 12px;
+    padding: 4px 8px;
+    background-color: #007bff;
+    color: white;
+    border-radius: 4px;
+}
+
+.save-button:hover {
+    background-color: #0056b3;
+}
