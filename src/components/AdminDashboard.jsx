@@ -62,74 +62,146 @@ const AdminDashboard = () => {
     setFolderUpload(directory);
   };
 
-  const handleFolderUpload = async (folderId) => {
+const handleFolderUpload = async (folderId) => {
     if (!folderUpload || folderUpload.length === 0) {
-      setError("Please select a folder to upload");
-      return;
+        setError("Please select a folder to upload");
+        return;
     }
 
     setUploading({ ...uploading, [folderId]: true });
     setError(null);
 
     try {
-      const formData = new FormData();
-      Array.from(folderUpload).forEach((file) => {
-        formData.append("images", file);
-      });
+        const formData = new FormData();
+        Array.from(folderUpload).forEach((file) => {
+            formData.append("images", file);
+        });
 
-      await api.post(`/api/folder/upload/${folderId}`, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+        // Split data into chunks (dynamic sizing based on total records)
+        const totalFiles = Array.from(folderUpload).length;
+        const chunkSize = totalFiles <= 200 ? 50 : 
+                          totalFiles <= 500 ? 100 : 
+                          totalFiles <= 1000 ? 150 : 200;
+        
+        const chunks = [];
+        for (let i = 0; i < totalFiles; i += chunkSize) {
+            chunks.push(Array.from(folderUpload).slice(i, i + chunkSize));
+        }
 
-      setFolderUpload(null);
-      await fetchFolders();
+        console.log(`Processing ${totalFiles} files in ${chunks.length} chunks of ~${chunkSize} each`);
+
+        // Create an array of promises for each chunk upload
+        const uploadPromises = chunks.map((chunk, index) => {
+            const chunkFormData = new FormData();
+            chunk.forEach((file) => {
+                chunkFormData.append("images", file);
+            });
+
+            return api.post(`/api/folder/upload/${folderId}`, chunkFormData, {
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                },
+            })
+            .then(response => {
+                console.log(`Batch ${index + 1} complete:`, response.data);
+                return {
+                    status: "fulfilled",
+                    value: response.data,
+                    chunkIndex: index
+                };
+            })
+            .catch(error => {
+                console.error(`Error uploading batch ${index + 1}:`, error);
+                return {
+                    status: "rejected",
+                    reason: error.response?.data?.message || "Upload error",
+                    chunkIndex: index
+                };
+            });
+        });
+
+        // Set status to indicate parallel processing
+        setUploading({ ...uploading, [folderId]: true });
+
+        // Use Promise.allSettled to handle all chunks in parallel
+        const results = await Promise.allSettled(uploadPromises);
+
+        let overallResults = {
+            successful: 0,
+            failedChunks: 0
+        };
+
+        results.forEach((result, index) => {
+            if (result.status === "fulfilled" && result.value.status !== "rejected") {
+                overallResults.successful++;
+            } else {
+                overallResults.failedChunks++;
+                console.error(`Chunk ${index + 1} failed:`, result.reason || result.value?.reason);
+            }
+        });
+
+        // Customize message based on results
+        let resultMessage = "";
+        if (overallResults.failedChunks > 0) {
+            resultMessage = `Upload partially complete. Uploaded ${overallResults.successful} chunks successfully. ${overallResults.failedChunks} batch(es) failed.`;
+        } else if (overallResults.successful > 0) {
+            resultMessage = `Success! Uploaded all ${overallResults.successful} chunks successfully.`;
+        }
+
+        setError(overallResults.failedChunks > 0 ? "warning" : null);
+        setUploading({ ...uploading, [folderId]: false });
+        setFolderUpload(null);
+        await fetchFolders();
+
     } catch (err) {
-      setError(err.response?.data?.message || "An error occurred");
-    } finally {
-      setUploading({ ...uploading, [folderId]: false });
+        setError(err.response?.data?.message || "An error occurred");
+        setUploading({ ...uploading, [folderId]: false });
     }
-  };
+};
 
-  const handleFileUpload = async (folderId) => {
+const handleFileUpload = async (folderId) => {
     if (!selectedFiles[folderId] || selectedFiles[folderId].length === 0) {
       setError("Please select files to upload");
       return;
     }
-
-    setUploading({ ...uploading, [folderId]: true });
-    setUploadProgress({ ...uploadProgress, [folderId]: 0 });
+  
+    setUploading((prev) => ({ ...prev, [folderId]: true }));
+    setUploadProgress((prev) => ({ ...prev, [folderId]: 0 }));
     setError(null);
-
+  
     try {
-      const formData = new FormData();
-      selectedFiles[folderId].forEach((file) => {
-        formData.append("images", file);
-      });
-
-      await api.post(`/api/folder/upload/${folderId}`, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-        onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          setUploadProgress({ ...uploadProgress, [folderId]: percentCompleted });
-        },
-      });
-
-      setSelectedFiles({
-        ...selectedFiles,
-        [folderId]: [],
-      });
-
+      const filesArray = selectedFiles[folderId];
+      const totalFiles = filesArray.length;
+  
+      // Dynamic batch size based on total files
+      const BATCH_SIZE = Math.ceil(totalFiles / 3) || 1; // Ensuring at least 1 file per batch
+      const totalBatches = Math.ceil(totalFiles / BATCH_SIZE);
+  
+      for (let i = 0; i < totalBatches; i++) {
+        const batch = filesArray.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
+  
+        const formData = new FormData();
+        batch.forEach((file) => formData.append("images", file));
+  
+        await api.post(`/api/folder/upload/${folderId}`, formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+          onUploadProgress: (progressEvent) => {
+            const percentCompleted = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            setUploadProgress((prev) => ({ ...prev, [folderId]: percentCompleted }));
+          },
+        });
+      }
+  
+      setSelectedFiles((prev) => ({ ...prev, [folderId]: [] }));
       await fetchFolders();
     } catch (err) {
       setError(err.response?.data?.message || "An error occurred");
     } finally {
-      setUploading({ ...uploading, [folderId]: false });
+      setUploading((prev) => ({ ...prev, [folderId]: false }));
     }
   };
 
