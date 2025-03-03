@@ -112,6 +112,48 @@ const UserList = () => {
     }
   };
 
+  const handleDeleteAllUsers = async () => {
+  if (!window.confirm('WARNING: Are you sure you want to delete ALL users? This action cannot be undone.')) {
+    return;
+  }
+  
+  // Double confirmation for destructive action
+  if (!window.confirm('This will permanently delete all users except your account. Type "DELETE ALL" to confirm.')) {
+    return;
+  }
+  
+  try {
+    const response = await api.delete('/api/users');
+    
+    if (response.data.msg === 'All users removed') {
+      // Update pagination
+      setPagination(prev => ({
+        ...prev,
+        totalRecords: response.data.totalRecords,
+        totalPages: Math.ceil(response.data.totalRecords / prev.pageSize),
+        currentPage: 1 // Reset to first page
+      }));
+      
+      // Refresh the user list
+      fetchUsers(1, pagination.pageSize, searchQuery);
+      
+      setError(''); // Clear any existing errors
+    } else {
+      setError('Failed to delete all users');
+    }
+  } catch (err) {
+    console.error('Delete all users error:', err);
+    setError(err.response?.data?.msg || 'Error deleting all users. Please try again.');
+    
+    // Handle specific error cases
+    if (err.response?.status === 401) {
+      navigate('/login');
+    } else if (err.response?.status === 403) {
+      setError('You do not have permission to delete users');
+    }
+  }
+};
+
   const handleEdit = (user) => {
     setEditingUser(user._id);
     setFormData({
@@ -304,6 +346,9 @@ const UserList = () => {
           <button onClick={toggleAddForm} className="add-user-button">
             {showAddForm ? 'Cancel' : 'Add User'}
           </button>
+          <button onClick={handleDeleteAllUsers} className="delete-all-button">
+      Delete All Users
+    </button>
         </div>
       </div>
 
