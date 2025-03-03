@@ -260,7 +260,7 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleExcelUpload = async () => {
+ const handleExcelUpload = async () => {
     if (!excelFile) {
       setUploadStatus({
         type: "error",
@@ -268,46 +268,43 @@ const AdminDashboard = () => {
       });
       return;
     }
-
+  
     try {
       setUploadProgress(10);
       const reader = new FileReader();
-
+  
       reader.onload = async (e) => {
         try {
           const data = e.target.result;
           const workbook = XLSX.read(data, { type: "binary" });
-          setUploadProgress(30);
-
+          setUploadProgress(20);
+  
           const sheetName = workbook.SheetNames[0];
           const sheet = workbook.Sheets[sheetName];
           const jsonData = XLSX.utils.sheet_to_json(sheet, { raw: false });
-          setUploadProgress(50);
-
+          setUploadProgress(30);
+  
           console.log("Parsed Excel Data:", jsonData);
-
-          // Process and validate data
+  
+          // Process and validate all data first
           const validationErrors = [];
-          const users = jsonData.map((row, index) => {
-            // Ensure proper type conversion and handling of phone numbers
+          const processedUsers = jsonData.map((row, index) => {
             const user = {
               username: String(row.username || "").trim(),
-              email: String(row.email || "")
-                .trim()
-                .toLowerCase(),
+              email: String(row.email || "").trim().toLowerCase(),
               password: String(row.password || "").trim(),
               phone: String(row.phone || "").trim(),
               role: "user",
             };
-
-            console.log(`Processing row ${index + 1}:`, user);
-
+  
             const errors = validateUserData(user, index);
-            validationErrors.push(...errors);
-
+            if (errors.length > 0) {
+              validationErrors.push(...errors);
+            }
+  
             return user;
           });
-
+  
           if (validationErrors.length > 0) {
             setUploadStatus({
               type: "error",
@@ -317,41 +314,128 @@ const AdminDashboard = () => {
             setUploadProgress(0);
             return;
           }
-
-          setUploadProgress(70);
-
-          const response = await api.post("/api/folder/users/upload", users);
-          setUploadProgress(100);
-
-          setUploadStatus({
-            type: "success",
-            message: `Successfully registered ${users.length} users`,
+  
+          // Split data into chunks (dynamic sizing based on total records)
+          const totalRecords = processedUsers.length;
+          // Choose chunk size based on record count
+          const chunkSize = totalRecords <= 200 ? 50 : 
+                           totalRecords <= 500 ? 100 : 
+                           totalRecords <= 1000 ? 150 : 200;
+          
+          const chunks = [];
+          for (let i = 0; i < processedUsers.length; i += chunkSize) {
+            chunks.push(processedUsers.slice(i, i + chunkSize));
+          }
+  
+          setUploadProgress(40);
+          console.log(`Processing ${totalRecords} records in ${chunks.length} chunks of ~${chunkSize} each`);
+  
+          // Create an array of promises for each chunk upload
+          const uploadPromises = chunks.map((chunk, index) => {
+            return api.post("/api/folder/users/upload", chunk)
+              .then(response => {
+                console.log(`Batch ${index + 1} complete:`, response.data.results);
+                return {
+                  status: "fulfilled",
+                  value: response.data.results,
+                  chunkIndex: index
+                };
+              })
+              .catch(error => {
+                console.error(`Error uploading batch ${index + 1}:`, error);
+                return {
+                  status: "rejected",
+                  reason: error.response?.data?.message || "Upload error",
+                  chunkIndex: index
+                };
+              });
           });
+  
+          // Set status to indicate parallel processing
+          setUploadStatus({
+            type: "info",
+            message: `Processing ${chunks.length} batches in parallel...`,
+          });
+          
+          // Use Promise.allSettled to handle all chunks in parallel
+          const results = await Promise.allSettled(uploadPromises);
+          
+          // Process results from all chunks
+          let overallResults = {
+            successful: 0,
+            skipped: 0,
+            skippedUsers: [],
+            failedChunks: 0
+          };
+          
+          results.forEach((result, index) => {
+            if (result.status === "fulfilled" && result.value.status !== "rejected") {
+              // Extract results from this chunk
+              const chunkResults = result.value;
+              overallResults.successful += chunkResults.successful || 0;
+              overallResults.skipped += chunkResults.skipped || 0;
+              
+              // Add skipped users if available
+              if (chunkResults.skippedUsers && Array.isArray(chunkResults.skippedUsers)) {
+                overallResults.skippedUsers = [
+                  ...overallResults.skippedUsers,
+                  ...chunkResults.skippedUsers
+                ];
+              }
+            } else {
+              // This chunk failed
+              overallResults.failedChunks++;
+              console.error(`Chunk ${index + 1} failed:`, result.reason || result.value?.reason);
+            }
+          });
+  
+          // Final results - improved messaging for mixed existing/new users scenario
+          setUploadProgress(100);
+          
+          // Customize message based on results
+          let resultMessage = "";
+          if (overallResults.failedChunks > 0) {
+            resultMessage = `Upload partially complete. Added ${overallResults.successful} new users. ${overallResults.skipped} existing users were skipped. ${overallResults.failedChunks} batch(es) failed.`;
+          } else if (overallResults.successful > 0 && overallResults.skipped > 0) {
+            resultMessage = `Upload complete! Added ${overallResults.successful} new users. ${overallResults.skipped} existing users were skipped.`;
+          } else if (overallResults.successful > 0) {
+            resultMessage = `Success! Added all ${overallResults.successful} new users.`;
+          } else if (overallResults.skipped > 0) {
+            resultMessage = `No new users added. All ${overallResults.skipped} users already exist in the system.`;
+          }
+          
+          setUploadStatus({
+            type: overallResults.failedChunks > 0 ? "warning" : "success",
+            message: resultMessage,
+            details: overallResults.skippedUsers.length > 0 && overallResults.skippedUsers.length <= 50
+              ? overallResults.skippedUsers.map(u => `Skipped: ${u.username || "Unknown"} - ${u.reason}`)
+              : overallResults.skippedUsers.length > 50 
+                ? [`${overallResults.skippedUsers.length} users were skipped. Most were already in the system.`] 
+                : null
+          });
+          
           setExcelFile(null);
-
+          
           // Reset file input
           const fileInput = document.getElementById("excel-upload");
           if (fileInput) fileInput.value = "";
+          
         } catch (error) {
           console.error("Error processing Excel:", error);
           setUploadStatus({
             type: "error",
-            message:
-              error.response?.data?.message ||
-              "Error processing Excel file. Please check the format.",
+            message: error.message || "Error processing Excel file. Please check the format.",
           });
           setUploadProgress(0);
         }
       };
-
+  
       reader.readAsBinaryString(excelFile);
     } catch (error) {
       console.error("Error uploading Excel:", error);
       setUploadStatus({
         type: "error",
-        message:
-          error.response?.data?.message ||
-          "Error uploading file. Please try again.",
+        message: error.message || "Error uploading file. Please try again.",
       });
       setUploadProgress(0);
     }
